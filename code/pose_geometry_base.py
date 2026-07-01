@@ -100,3 +100,51 @@ class PoseGeometryBase:
         """Runs MediaPipe on a BGR color image. Returns MediaPipe results object."""
         rgb_image = color_image[:, :, ::-1]
         return self.pose.process(rgb_image)
+
+
+    def get_torso_lean_angle(self, landmarks_proto, side="left"):
+        """
+        Calculates the angle between the shoulder, hip, and a virtual point
+        directly above the hip to measure torso lean.
+        """
+        if landmarks_proto is None:
+            return None
+            
+        landmarks = landmarks_proto.landmark
+        
+        if side == "left":
+            hip = landmarks[mp_pose.PoseLandmark.LEFT_HIP.value]
+            shoulder = landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value]
+        else:
+            hip = landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value]
+            shoulder = landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value]
+            
+        if hip.visibility < 0.2 or shoulder.visibility < 0.2:
+            return None
+            
+        hip_pt = np.array([hip.x, hip.y, hip.z])
+        shoulder_pt = np.array([shoulder.x, shoulder.y, shoulder.z])
+        vertical_up = np.array([hip.x, hip.y - 0.5, hip.z])
+        
+        return self.angle_between(shoulder_pt, hip_pt, vertical_up)
+
+class EMAFilter:
+    """
+    Exponential Moving Average (EMA) filter to smooth out noisy sensor data.
+    alpha is the smoothing factor between 0 and 1.
+    Higher alpha = less smoothing, more responsive.
+    Lower alpha = more smoothing, less responsive.
+    """
+    def __init__(self, alpha=0.3):
+        self.alpha = alpha
+        self.value = None
+
+    def update(self, new_value):
+        if new_value is None:
+            return self.value
+            
+        if self.value is None:
+            self.value = new_value
+        else:
+            self.value = self.alpha * new_value + (1.0 - self.alpha) * self.value
+        return self.value
