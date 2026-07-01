@@ -1,8 +1,9 @@
 import numpy as np
+from typing import Optional, Any, Tuple
 from pose_geometry_base import PoseGeometryBase, mp_pose
 
 class SquatAngleDetector(PoseGeometryBase):
-    def process_frame(self, color_image, depth_frame, depth_image, side="auto", visibility_floor=0.15):
+    def process_frame(self, color_image: np.ndarray, depth_frame: Any, depth_image: np.ndarray, side: str = "auto", visibility_floor: float = 0.15) -> Optional[dict]:
         """
         Run pose detection on one color frame and compute the knee angle(s).
 
@@ -112,8 +113,8 @@ class SquatRepCounter:
     If the user drops below angle_min, spreads knees too wide, squats unevenly,
     or leans their back too far, the rep is marked as INVALID and will not count.
     """
-    def __init__(self, stand_threshold=160.0, squat_threshold=135.0, angle_min=None,
-                 max_angle_diff=None, max_knee_dist_mm=None, max_torso_lean=None):
+    def __init__(self, stand_threshold: float = 160.0, squat_threshold: float = 135.0, angle_min: Optional[float] = None,
+                 max_angle_diff: Optional[float] = None, max_knee_dist_mm: Optional[float] = None, max_torso_lean: Optional[float] = None):
         self.stand_threshold = stand_threshold
         self.squat_threshold = squat_threshold
         self.angle_min = angle_min
@@ -124,7 +125,7 @@ class SquatRepCounter:
         self.state = "standing"
         self.rep_count = 0
 
-    def update(self, metric, angle_diff=None, knee_dist=None, torso_lean=None):
+    def update(self, metric: Optional[float], angle_diff: Optional[float] = None, knee_dist: Optional[float] = None, torso_lean: Optional[float] = None) -> Tuple[str, int, bool]:
         """Call once per frame with current metrics. Returns (state, rep_count, just_completed_rep)."""
         just_completed = False
         if metric is None:

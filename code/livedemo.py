@@ -128,7 +128,8 @@ def camera_capture_thread(pipeline, align, frame_queue, stop_event):
                 print(f"Camera thread error: {e}")
 
 
-def main():
+def init_camera():
+    """Initializes the RealSense camera pipeline and returns necessary objects."""
     pipeline = rs.pipeline()
     config = rs.config()
     config.enable_stream(rs.stream.depth, FRAME_WIDTH, FRAME_HEIGHT, rs.format.z16, FPS)
@@ -139,6 +140,56 @@ def main():
 
     depth_stream = profile.get_stream(rs.stream.depth)
     intrinsics = depth_stream.as_video_stream_profile().get_intrinsics()
+    
+    return pipeline, align, intrinsics
+
+def process_frame_logic(result, rep_counter, angle_smoother, use_ratio_mode):
+    """Processes the detector result and updates the rep counter. Returns (smoothed_metric, is_correct, cue_text, state_text, rep_count)."""
+    raw_metric = (result["vertical_ratio"] if use_ratio_mode else result["knee_angle_deg"]) if result else None
+    angle_diff = result["angle_diff"] if result else None
+    knee_dist = result["knee_dist_mm"] if result else None
+    torso_lean = result["torso_lean_deg"] if result else None
+    
+    smoothed_metric = angle_smoother.update(raw_metric)
+    
+    is_correct = False
+    cue_text = "Step into frame"
+    state_text = "None"
+    rep_count = rep_counter.rep_count
+
+    if smoothed_metric is not None:
+        state_text, rep_count, just_completed = rep_counter.update(smoothed_metric, angle_diff, knee_dist, torso_lean)
+        
+        is_correct = True  
+        
+        if state_text == "standing":
+            cue_text = "READY TO SQUAT"
+        elif state_text == "squatting":
+            if smoothed_metric > SQUAT_MAX_VAL:
+                cue_text = "GO LOWER"
+            elif smoothed_metric < SQUAT_MIN_VAL:
+                cue_text = "TOO DEEP - EASE UP"
+                is_correct = False
+            else:
+                cue_text = "GOOD DEPTH"
+        elif state_text == "invalid_depth":
+            cue_text = "WENT TOO DEEP - STAND UP TO RESET"
+            is_correct = False
+        elif state_text == "invalid_asymmetric":
+            cue_text = "UNEVEN SQUAT - STAND UP TO RESET"
+            is_correct = False
+        elif state_text == "invalid_wide_knees":
+            cue_text = "KNEES TOO WIDE - STAND UP TO RESET"
+            is_correct = False
+        elif state_text == "invalid_back_posture":
+            cue_text = "BACK BENT TOO FAR - STAND UP"
+            is_correct = False
+
+    return smoothed_metric, is_correct, cue_text, state_text, rep_count
+
+
+def main():
+    pipeline, align, intrinsics = init_camera()
 
     detector = SquatAngleDetector(depth_intrinsics=intrinsics)
     rep_counter = SquatRepCounter(stand_threshold=STAND_THRESHOLD, 
@@ -148,10 +199,8 @@ def main():
                                   max_knee_dist_mm=MAX_KNEE_DIST_MM,
                                   max_torso_lean=MAX_TORSO_LEAN)
     
-    # We use a smaller alpha for ratios since they are a smaller scale
     angle_smoother = EMAFilter(alpha=0.3 if not USE_RATIO_MODE else 0.1)
 
-    # Setup multithreading for camera capture
     frame_queue = queue.Queue(maxsize=2)
     stop_event = threading.Event()
     cam_thread = threading.Thread(target=camera_capture_thread, args=(pipeline, align, frame_queue, stop_event))
@@ -167,7 +216,6 @@ def main():
     try:
         while True:
             try:
-                # Get latest frame from queue
                 color_frame, depth_frame = frame_queue.get(timeout=1.0)
             except queue.Empty:
                 continue
@@ -188,51 +236,12 @@ def main():
 
             display_image = color_image.copy()
 
-            raw_metric = (result["vertical_ratio"] if USE_RATIO_MODE else result["knee_angle_deg"]) if result else None
-            angle_diff = result["angle_diff"] if result else None
-            knee_dist = result["knee_dist_mm"] if result else None
-            torso_lean = result["torso_lean_deg"] if result else None
+            smoothed_metric, is_correct, cue_text, state_text, rep_count = process_frame_logic(
+                result, rep_counter, angle_smoother, USE_RATIO_MODE
+            )
             
-            # 1. Smooth the metric
-            smoothed_metric = angle_smoother.update(raw_metric)
-            
-            is_correct = False
-            cue_text = "Step into frame"
-            state_text = "None"
-            rep_count = rep_counter.rep_count
-
-            if smoothed_metric is not None:
-                # 2. Update state machine with new metrics
-                state_text, rep_count, just_completed = rep_counter.update(smoothed_metric, angle_diff, knee_dist, torso_lean)
-                
-                # 3. Give per-frame correctness feedback based on state and metric
-                is_correct = True  # Default to green overlay
-                
-                if state_text == "standing":
-                    cue_text = "READY TO SQUAT"
-                elif state_text == "squatting":
-                    if smoothed_metric > SQUAT_MAX_VAL:
-                        cue_text = "GO LOWER"
-                    elif smoothed_metric < SQUAT_MIN_VAL:
-                        cue_text = "TOO DEEP - EASE UP"
-                        is_correct = False
-                    else:
-                        cue_text = "GOOD DEPTH"
-                elif state_text == "invalid_depth":
-                    cue_text = "WENT TOO DEEP - STAND UP TO RESET"
-                    is_correct = False
-                elif state_text == "invalid_asymmetric":
-                    cue_text = "UNEVEN SQUAT - STAND UP TO RESET"
-                    is_correct = False
-                elif state_text == "invalid_wide_knees":
-                    cue_text = "KNEES TOO WIDE - STAND UP TO RESET"
-                    is_correct = False
-                elif state_text == "invalid_back_posture":
-                    cue_text = "BACK BENT TOO FAR - STAND UP"
-                    is_correct = False
-
-                if result and "landmarks" in result:
-                    draw_skeleton_with_feedback(display_image, result["landmarks"], is_correct)
+            if result and "landmarks" in result and smoothed_metric is not None:
+                draw_skeleton_with_feedback(display_image, result["landmarks"], is_correct)
 
             draw_hud(display_image, EXERCISE_NAME, smoothed_metric, is_correct,
                      avg_latency, live_fps, cue_text, rep_count, state_text)
@@ -248,7 +257,6 @@ def main():
         pipeline.stop()
         detector.close()
         cv2.destroyAllWindows()
-
 
 if __name__ == "__main__":
     main()

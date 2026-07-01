@@ -23,13 +23,14 @@ your sample videos instead of training on them.
 
 import numpy as np
 import mediapipe as mp
+from typing import Optional, Any
 
 mp_pose = mp.solutions.pose
 
 
 class PoseGeometryBase:
-    def __init__(self, depth_intrinsics, min_detection_confidence=0.5,
-                 min_tracking_confidence=0.5, visibility_floor=0.15):
+    def __init__(self, depth_intrinsics: Any = None, min_detection_confidence: float = 0.5,
+                 min_tracking_confidence: float = 0.5, visibility_floor: float = 0.15):
         """
         depth_intrinsics: rs.intrinsics from your depth stream profile:
             profile = pipeline.start(config)
@@ -51,7 +52,7 @@ class PoseGeometryBase:
     def close(self):
         self.pose.close()
 
-    def _pixel_depth_to_3d(self, px, py, depth_frame, depth_image):
+    def _pixel_depth_to_3d(self, px: float, py: float, depth_frame: Any, depth_image: np.ndarray) -> Optional[np.ndarray]:
         """Pixel (0-1 normalized) + depth -> real-world 3D point in mm."""
         h, w = depth_image.shape
         x = int(np.clip(px * w, 0, w - 1))
@@ -70,7 +71,7 @@ class PoseGeometryBase:
         return np.array([X, Y, Z])
 
     @staticmethod
-    def angle_between(a, b, c):
+    def angle_between(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> float:
         """Angle at point b formed by a-b-c, in degrees. 180 = straight line."""
         ba = a - b
         bc = c - b
@@ -78,7 +79,7 @@ class PoseGeometryBase:
         cos_angle = np.clip(cos_angle, -1.0, 1.0)
         return float(np.degrees(np.arccos(cos_angle)))
 
-    def get_landmarks_3d(self, results, landmark_ids, depth_frame, depth_image):
+    def get_landmarks_3d(self, results: Any, landmark_ids: list[int], depth_frame: Any, depth_image: np.ndarray) -> dict[int, tuple[Optional[np.ndarray], float]]:
         """
         Given MediaPipe results and a list of PoseLandmark ids, returns a dict
         {landmark_id: (point_3d_or_None, visibility)} for each requested joint.
@@ -96,13 +97,13 @@ class PoseGeometryBase:
                 out[landmark_id] = (p3d, point.visibility)
         return out
 
-    def run_pose(self, color_image):
+    def run_pose(self, color_image: np.ndarray) -> Any:
         """Runs MediaPipe on a BGR color image. Returns MediaPipe results object."""
         rgb_image = color_image[:, :, ::-1]
         return self.pose.process(rgb_image)
 
 
-    def get_torso_lean_angle(self, landmarks_proto, side="left"):
+    def get_torso_lean_angle(self, landmarks_proto: Any, side: str = "left") -> Optional[float]:
         """
         Calculates the angle between the shoulder, hip, and a virtual point
         directly above the hip to measure torso lean.
@@ -135,11 +136,11 @@ class EMAFilter:
     Higher alpha = less smoothing, more responsive.
     Lower alpha = more smoothing, less responsive.
     """
-    def __init__(self, alpha=0.3):
+    def __init__(self, alpha: float = 0.3):
         self.alpha = alpha
-        self.value = None
+        self.value: Optional[float] = None
 
-    def update(self, new_value):
+    def update(self, new_value: Optional[float]) -> Optional[float]:
         if new_value is None:
             return self.value
             

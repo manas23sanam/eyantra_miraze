@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Mirror Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="dashboard">
+        <header class="header">
+            <h1>SMART MIRROR</h1>
+            <div class="exercise-badge">{{ exercise_name }}</div>
+        </header>
+
+        <main class="main-content">
+            <div class="video-container">
+                <img src="/video_feed" alt="Live Camera Feed" id="video-stream">
+                <div class="cue-overlay" id="cue-text">Connecting...</div>
+            </div>
+
+            <aside class="stats-panel">
+                <div class="stat-card primary">
+                    <h3>Reps</h3>
+                    <div class="value highlight" id="rep-count">0</div>
+                </div>
+
+                <div class="stat-card">
+                    <h3>Current State</h3>
+                    <div class="value" id="state-text">NONE</div>
+                </div>
+
+                <div class="stat-card">
+                    <h3 id="metric-label">Angle</h3>
+                    <div class="value" id="current-metric">--</div>
+                </div>
+
+                <div class="system-stats">
+                    <p>Latency: <span id="latency">--</span> ms</p>
+                    <p>FPS: <span id="fps">--</span></p>
+                </div>
+            </aside>
+        </main>
+    </div>
+
+    <script>
+        const repCountEl = document.getElementById('rep-count');
+        const stateTextEl = document.getElementById('state-text');
+        const currentMetricEl = document.getElementById('current-metric');
+        const metricLabelEl = document.getElementById('metric-label');
+        const cueTextEl = document.getElementById('cue-text');
+        const latencyEl = document.getElementById('latency');
+        const fpsEl = document.getElementById('fps');
+
+        async function fetchStats() {
+            try {
+                const response = await fetch('/api/stats');
+                const data = await response.json();
+
+                // Update reps
+                repCountEl.textContent = data.rep_count;
+                
+                // Update state
+                stateTextEl.textContent = data.state_text;
+
+                // Update metric
+                metricLabelEl.textContent = data.use_ratio_mode ? "Ratio" : "Angle (deg)";
+                currentMetricEl.textContent = data.metric !== null ? data.metric : "--";
+
+                // Update cue and coloring
+                cueTextEl.textContent = data.cue_text;
+                if (data.is_correct) {
+                    cueTextEl.className = "cue-overlay success";
+                } else {
+                    cueTextEl.className = "cue-overlay error";
+                }
+
+                // Update system stats
+                latencyEl.textContent = data.latency_ms;
+                fpsEl.textContent = data.fps;
+
+            } catch (err) {
+                console.error("Error fetching stats:", err);
+            }
+        }
+
+        // Poll every 33ms (approx 30fps)
+        setInterval(fetchStats, 33);
+    </script>
+</body>
+</html>
