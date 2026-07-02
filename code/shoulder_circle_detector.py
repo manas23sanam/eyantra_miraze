@@ -1,114 +1,117 @@
-"""
-shoulder_circle_detector.py
-
-Shoulder rolls: the arm/shoulder moves in a circular path rather than
-holding a static angle, so this is NOT a single-frame angle check like
-squats - it's a TIME-SERIES check. We track the angle of the
-shoulder-to-elbow vector (relative to a fixed reference) across frames
-and look for it sweeping through a full rotation.
-
-Approach: project the shoulder-to-elbow vector onto a 2D plane (using
-the torso's coordinate frame so it's somewhat robust to camera angle),
-compute its angle each frame, and accumulate angular change over time.
-A "correct" circle = the accumulated angle change completes close to
-360 degrees in a smooth, consistent direction. A jerky or incomplete
-movement (accumulated angle far short of 360, or direction reversals)
-gets flagged as incorrect.
-
-This needs a tracker object that persists across frames (not just a
-single process_frame call) because "is this a circle" is inherently
-a multi-frame question.
-"""
-
 import numpy as np
+from typing import Optional, Any, Tuple
 from pose_geometry_base import PoseGeometryBase, mp_pose
 
+class EMAFilter:
+    def __init__(self, alpha: float):
+        self.alpha = alpha
+        self.value = None
+
+    def update(self, new_val: float) -> Optional[float]:
+        if self.value is None:
+            self.value = new_val
+        else:
+            self.value = self.alpha * new_val + (1 - self.alpha) * self.value
+        return self.value
 
 class ShoulderCircleDetector(PoseGeometryBase):
-    def get_shoulder_elbow_angle(self, color_image, depth_frame, depth_image, side="left"):
-        """
-        Returns the angle (in degrees, 0-360) of the shoulder->elbow vector
-        within the frontal plane (X-Y, ignoring depth Z) for one frame.
-        Returns None if landmarks aren't visible.
-        """
+    """
+    Tracks shoulder rolls (shrugging up, rolling back, down, and forward) from a frontal view.
+    Instead of tracking the whole arm, it tracks the shoulder's position relative to the nose 
+    (elevation) and the distance between the shoulders (protraction/retraction).
+    """
+    def __init__(self, depth_intrinsics=None):
+        super().__init__(depth_intrinsics=depth_intrinsics)
+        self.center_x_ema = EMAFilter(alpha=0.05)
+        self.center_y_ema = EMAFilter(alpha=0.05)
+
+    def process_frame(self, color_image: np.ndarray, depth_frame=None, depth_image=None) -> Optional[dict]:
         results = self.run_pose(color_image)
-        if not results.pose_landmarks:
-            return None, None
+        if not results or not results.pose_landmarks:
+            return None
 
-        shoulder_id = (mp_pose.PoseLandmark.LEFT_SHOULDER if side == "left"
-                        else mp_pose.PoseLandmark.RIGHT_SHOULDER)
-        elbow_id = (mp_pose.PoseLandmark.LEFT_ELBOW if side == "left"
-                    else mp_pose.PoseLandmark.RIGHT_ELBOW)
+        lm = results.pose_landmarks.landmark
+        nose = lm[mp_pose.PoseLandmark.NOSE]
+        l_shoulder = lm[mp_pose.PoseLandmark.LEFT_SHOULDER]
+        r_shoulder = lm[mp_pose.PoseLandmark.RIGHT_SHOULDER]
 
-        joints = self.get_landmarks_3d(results, [shoulder_id, elbow_id], depth_frame, depth_image)
-        shoulder, _ = joints[shoulder_id]
-        elbow, _ = joints[elbow_id]
+        if nose.visibility < 0.2 or l_shoulder.visibility < 0.2 or r_shoulder.visibility < 0.2:
+            return None
 
-        if shoulder is None or elbow is None:
-            return None, results.pose_landmarks
+        # 1. Chest Width (X axis of our phase space)
+        # When rolling shoulders forward, width decreases. Rolling backward, width increases.
+        chest_width = abs(l_shoulder.x - r_shoulder.x)
 
-        vec = elbow - shoulder
-        angle_rad = np.arctan2(vec[1], vec[0])  # frontal plane angle
+        # 2. Shrug Height (Y axis of our phase space)
+        # Y increases downwards in image. 
+        # nose.y - mid_shoulder.y is negative. As you shrug up, it gets closer to 0 (increases).
+        mid_shoulder_y = (l_shoulder.y + r_shoulder.y) / 2.0
+        shrug_height = nose.y - mid_shoulder_y
+
+        # Update the moving average to find the "center" of the circle
+        cx = self.center_x_ema.update(chest_width)
+        cy = self.center_y_ema.update(shrug_height)
+
+        if cx is None or cy is None:
+            return None
+
+        # Calculate the vector from the center of the roll
+        vec_x = chest_width - cx
+        vec_y = shrug_height - cy
+
+        # Angle of the shoulder roll phase
+        angle_rad = np.arctan2(vec_y, vec_x)
         angle_deg = float(np.degrees(angle_rad)) % 360
 
-        return angle_deg, results.pose_landmarks
-
-
-class ShoulderCircleTracker:
-    """
-    Stateful tracker - call update() once per frame with the current
-    shoulder-elbow angle. Accumulates total rotation and detects
-    direction reversals, so you can tell whether a full smooth circle
-    was completed.
-    """
-    def __init__(self, completion_threshold_deg=300.0, reversal_tolerance_deg=15.0):
-        self.completion_threshold_deg = completion_threshold_deg
-        self.reversal_tolerance_deg = reversal_tolerance_deg
-        self.prev_angle = None
-        self.accumulated_rotation = 0.0
-        self.direction = None  # "cw" or "ccw"
-        self.reversal_count = 0
-
-    def update(self, angle_deg):
-        """
-        Returns dict: {accumulated_rotation, is_complete, reversal_count, direction}
-        """
-        if angle_deg is None:
-            return self._status()
-
-        if self.prev_angle is None:
-            self.prev_angle = angle_deg
-            return self._status()
-
-        diff = angle_deg - self.prev_angle
-        # Handle wraparound (e.g. 359 -> 2 degrees should be +3, not -357)
-        if diff > 180:
-            diff -= 360
-        elif diff < -180:
-            diff += 360
-
-        current_direction = "ccw" if diff > 0 else "cw"
-        if self.direction is None:
-            self.direction = current_direction
-        elif current_direction != self.direction and abs(diff) > self.reversal_tolerance_deg:
-            self.reversal_count += 1
-            self.direction = current_direction
-
-        self.accumulated_rotation += abs(diff)
-        self.prev_angle = angle_deg
-
-        return self._status()
-
-    def _status(self):
         return {
-            "accumulated_rotation_deg": self.accumulated_rotation,
-            "is_complete": self.accumulated_rotation >= self.completion_threshold_deg,
-            "reversal_count": self.reversal_count,
-            "direction": self.direction,
+            "angle_deg": angle_deg,
+            "chest_width": chest_width,
+            "shrug_height": shrug_height,
+            "landmarks": results.pose_landmarks
         }
 
-    def reset(self):
-        self.prev_angle = None
-        self.accumulated_rotation = 0.0
-        self.direction = None
-        self.reversal_count = 0
+
+class ShoulderCircleRepCounter:
+    """
+    A 4-quadrant state machine that requires the shoulder roll phase angle
+    to pass through all 4 quadrants sequentially to count a rep.
+    """
+    def __init__(self):
+        self.current_quadrant = None
+        self.quadrants_visited = set()
+        self.rep_count = 0
+
+    def get_quadrant(self, angle: float) -> int:
+        if 0 <= angle < 90: return 1
+        elif 90 <= angle < 180: return 2
+        elif 180 <= angle < 270: return 3
+        else: return 4
+
+    def update(self, angle_deg: Optional[float]) -> Tuple[str, int, bool]:
+        just_completed = False
+        if angle_deg is None:
+            state_str = f"QUADRANT_{self.current_quadrant}" if self.current_quadrant else "NONE"
+            return state_str, self.rep_count, just_completed
+
+        new_quadrant = self.get_quadrant(angle_deg)
+
+        if self.current_quadrant is None:
+            self.current_quadrant = new_quadrant
+            self.quadrants_visited.add(new_quadrant)
+        elif new_quadrant != self.current_quadrant:
+            # Check for forward progression
+            expected_next = (self.current_quadrant % 4) + 1
+            if new_quadrant == expected_next:
+                self.quadrants_visited.add(new_quadrant)
+                self.current_quadrant = new_quadrant
+
+                if len(self.quadrants_visited) == 4:
+                    self.rep_count += 1
+                    just_completed = True
+                    self.quadrants_visited = {new_quadrant}
+            else:
+                # If they jump randomly or go backwards, reset tracking
+                self.quadrants_visited = {new_quadrant}
+                self.current_quadrant = new_quadrant
+
+        return f"QUADRANT_{self.current_quadrant}", self.rep_count, just_completed

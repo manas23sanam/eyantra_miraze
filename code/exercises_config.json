@@ -14,8 +14,6 @@
     "angle_max": 100.0,
     "stand_threshold": 160.0,
     "squat_threshold": 90.0,
-    "max_angle_diff": 20.0,
-    "max_knee_dist_mm": 500.0,
     "max_torso_lean": 55.0
   },
   "front_squat": {
@@ -27,5 +25,17 @@
     "squat_threshold": 0.4,
     "max_angle_diff": 20.0,
     "max_knee_dist_mm": 500.0
+  },
+  "pendulum": {
+    "name": "PENDULUM"
+  },
+  "shoulder_circle": {
+    "name": "SHOULDER CIRCLE"
+  },
+  "sit_to_stand": {
+    "name": "SIT TO STAND"
+  },
+  "upper_trapezius": {
+    "name": "UPPER TRAPEZIUS STRETCH"
   }
 }

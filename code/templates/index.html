@@ -40,8 +40,43 @@
                     <p>Latency: <span id="latency">--</span> ms</p>
                     <p>FPS: <span id="fps">--</span></p>
                 </div>
+                
+                <button id="btn-end" class="btn-end">END EXERCISE</button>
             </aside>
         </main>
+    </div>
+
+    <!-- Summary Modal -->
+    <div class="modal-overlay" id="summary-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>WORKOUT COMPLETE</h2>
+            </div>
+            
+            <div class="summary-stats">
+                <div class="summary-stat-card good">
+                    <h4>Perfect Reps</h4>
+                    <div class="val" id="sum-correct">0</div>
+                </div>
+                <div class="summary-stat-card bad">
+                    <h4>Mistakes</h4>
+                    <div class="val" id="sum-incorrect">0</div>
+                </div>
+                <div class="summary-stat-card acc" style="grid-column: span 2;">
+                    <h4>Accuracy</h4>
+                    <div class="val"><span id="sum-acc">0</span>%</div>
+                </div>
+            </div>
+
+            <div class="feedback-section">
+                <h4>Areas for Improvement</h4>
+                <ul class="feedback-list" id="feedback-list">
+                    <!-- Populated dynamically -->
+                </ul>
+            </div>
+
+            <button id="btn-close-modal" class="btn-close">CLOSE APP</button>
+        </div>
     </div>
 
     <script>
@@ -52,41 +87,64 @@
         const cueTextEl = document.getElementById('cue-text');
         const latencyEl = document.getElementById('latency');
         const fpsEl = document.getElementById('fps');
+        let pollingInterval = null;
 
         async function fetchStats() {
             try {
                 const response = await fetch('/api/stats');
                 const data = await response.json();
 
-                // Update reps
                 repCountEl.textContent = data.rep_count;
-                
-                // Update state
                 stateTextEl.textContent = data.state_text;
-
-                // Update metric
                 metricLabelEl.textContent = data.use_ratio_mode ? "Ratio" : "Angle (deg)";
                 currentMetricEl.textContent = data.metric !== null ? data.metric : "--";
-
-                // Update cue and coloring
                 cueTextEl.textContent = data.cue_text;
                 if (data.is_correct) {
                     cueTextEl.className = "cue-overlay success";
                 } else {
                     cueTextEl.className = "cue-overlay error";
                 }
-
-                // Update system stats
                 latencyEl.textContent = data.latency_ms;
                 fpsEl.textContent = data.fps;
-
             } catch (err) {
                 console.error("Error fetching stats:", err);
             }
         }
 
-        // Poll every 33ms (approx 30fps)
-        setInterval(fetchStats, 33);
+        pollingInterval = setInterval(fetchStats, 33);
+
+        // End Exercise Modal Logic
+        document.getElementById('btn-end').addEventListener('click', async () => {
+            clearInterval(pollingInterval); // stop polling stats
+            
+            try {
+                const res = await fetch('/api/summary');
+                const data = await res.json();
+                
+                document.getElementById('sum-correct').textContent = data.correct_reps;
+                document.getElementById('sum-incorrect').textContent = data.incorrect_reps;
+                document.getElementById('sum-acc').textContent = data.accuracy;
+                
+                const listEl = document.getElementById('feedback-list');
+                listEl.innerHTML = '';
+                
+                if (Object.keys(data.mistake_counts).length === 0) {
+                    listEl.innerHTML = '<li>Perfect form! Keep it up!</li>';
+                } else {
+                    for (const [mistake, count] of Object.entries(data.mistake_counts)) {
+                        listEl.innerHTML += `<li><span>${mistake}</span> <span style="color:var(--error); font-weight:bold;">${count}x</span></li>`;
+                    }
+                }
+                
+                document.getElementById('summary-modal').classList.add('active');
+            } catch (err) {
+                console.error(err);
+            }
+        });
+
+        document.getElementById('btn-close-modal').addEventListener('click', () => {
+            window.close(); // attempts to close the tab
+        });
     </script>
 </body>
 </html>

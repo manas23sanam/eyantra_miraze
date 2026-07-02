@@ -5,50 +5,9 @@ import pyrealsense2 as rs
 import mediapipe as mp
 import threading
 import queue
-import json
 
-from squat_angle_detector import SquatAngleDetector, SquatRepCounter
 from pose_geometry_base import EMAFilter
-
-# Load configurations
-with open('exercises_config.json', 'r') as f:
-    config_data = json.load(f)
-
-def select_exercise():
-    print("\n" + "="*30)
-    print("  SMART MIRROR EXERCISE TRACKER")
-    print("="*30)
-    keys = list(config_data.keys())
-    for i, key in enumerate(keys):
-        print(f"[{i + 1}] {config_data[key]['name']}")
-    
-    while True:
-        try:
-            choice = int(input(f"\nSelect an exercise [1-{len(keys)}]: "))
-            if 1 <= choice <= len(keys):
-                selected_key = keys[choice - 1]
-                return config_data[selected_key]
-            else:
-                print("Invalid choice, try again.")
-        except ValueError:
-            print("Please enter a valid number.")
-
-squat_config = select_exercise()
-EXERCISE_NAME = squat_config["name"]
-USE_RATIO_MODE = squat_config.get("use_ratio_mode", False)
-
-if USE_RATIO_MODE:
-    SQUAT_MAX_VAL = squat_config["ratio_max"]
-    SQUAT_MIN_VAL = squat_config["ratio_min"]
-else:
-    SQUAT_MAX_VAL = squat_config["angle_max"]
-    SQUAT_MIN_VAL = squat_config["angle_min"]
-
-STAND_THRESHOLD = squat_config["stand_threshold"]
-SQUAT_THRESHOLD = squat_config["squat_threshold"]
-MAX_ANGLE_DIFF = squat_config.get("max_angle_diff")
-MAX_KNEE_DIST_MM = squat_config.get("max_knee_dist_mm")
-MAX_TORSO_LEAN = squat_config.get("max_torso_lean")
+from exercise_utils import load_config, select_exercise, get_exercise_components, process_frame_logic, SessionTracker
 
 FRAME_WIDTH = 640
 FRAME_HEIGHT = 480
@@ -56,7 +15,6 @@ FPS = 30
 
 mp_pose = mp.solutions.pose
 mp_drawing = mp.solutions.drawing_utils
-mp_styles = mp.solutions.drawing_styles
 
 def color_for_state(is_correct):
     return (0, 200, 0) if is_correct else (0, 0, 230)
@@ -74,7 +32,7 @@ def draw_skeleton_with_feedback(image, landmarks_proto, is_correct):
         connection_drawing_spec=connection_style,
     )
 
-def draw_hud(image, exercise_name, current_val, is_correct, latency_ms, fps, cue_text, rep_count, state_text):
+def draw_hud(image, exercise_name, current_val, metric_name, is_correct, latency_ms, fps, cue_text, rep_count, state_text):
     h, w = image.shape[:2]
 
     # Top banner: exercise name
@@ -87,9 +45,9 @@ def draw_hud(image, exercise_name, current_val, is_correct, latency_ms, fps, cue
     cv2.putText(image, cue_text, (w - 380, 33), cv2.FONT_HERSHEY_SIMPLEX,
                 0.7, status_color, 2, cv2.LINE_AA)
 
-    # Bottom-left: angle/ratio reading and rep count
+    # Bottom-left: metric reading and rep count
     if current_val is not None:
-        val_text = f"Ratio: {current_val:.2f}" if USE_RATIO_MODE else f"Angle: {current_val:.1f} deg"
+        val_text = f"{metric_name}: {current_val:.1f}"
         cv2.putText(image, f"{val_text} | State: {state_text.upper()}", (15, h - 80),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2, cv2.LINE_AA)
         cv2.putText(image, f"REPS: {rep_count}", (15, h - 50),
@@ -104,7 +62,6 @@ def draw_hud(image, exercise_name, current_val, is_correct, latency_ms, fps, cue
 
 
 def camera_capture_thread(pipeline, align, frame_queue, stop_event):
-    """Thread to continuously capture frames from RealSense and put in queue."""
     while not stop_event.is_set():
         try:
             frames = pipeline.wait_for_frames(timeout_ms=1000)
@@ -115,7 +72,6 @@ def camera_capture_thread(pipeline, align, frame_queue, stop_event):
             if not depth_frame or not color_frame:
                 continue
                 
-            # If queue is full, drop the oldest frame to keep latency low
             if frame_queue.full():
                 try:
                     frame_queue.get_nowait()
@@ -129,77 +85,26 @@ def camera_capture_thread(pipeline, align, frame_queue, stop_event):
 
 
 def init_camera():
-    """Initializes the RealSense camera pipeline and returns necessary objects."""
     pipeline = rs.pipeline()
     config = rs.config()
     config.enable_stream(rs.stream.depth, FRAME_WIDTH, FRAME_HEIGHT, rs.format.z16, FPS)
     config.enable_stream(rs.stream.color, FRAME_WIDTH, FRAME_HEIGHT, rs.format.bgr8, FPS)
-
     profile = pipeline.start(config)
     align = rs.align(rs.stream.color)
-
     depth_stream = profile.get_stream(rs.stream.depth)
     intrinsics = depth_stream.as_video_stream_profile().get_intrinsics()
-    
     return pipeline, align, intrinsics
-
-def process_frame_logic(result, rep_counter, angle_smoother, use_ratio_mode):
-    """Processes the detector result and updates the rep counter. Returns (smoothed_metric, is_correct, cue_text, state_text, rep_count)."""
-    raw_metric = (result["vertical_ratio"] if use_ratio_mode else result["knee_angle_deg"]) if result else None
-    angle_diff = result["angle_diff"] if result else None
-    knee_dist = result["knee_dist_mm"] if result else None
-    torso_lean = result["torso_lean_deg"] if result else None
-    
-    smoothed_metric = angle_smoother.update(raw_metric)
-    
-    is_correct = False
-    cue_text = "Step into frame"
-    state_text = "None"
-    rep_count = rep_counter.rep_count
-
-    if smoothed_metric is not None:
-        state_text, rep_count, just_completed = rep_counter.update(smoothed_metric, angle_diff, knee_dist, torso_lean)
-        
-        is_correct = True  
-        
-        if state_text == "standing":
-            cue_text = "READY TO SQUAT"
-        elif state_text == "squatting":
-            if smoothed_metric > SQUAT_MAX_VAL:
-                cue_text = "GO LOWER"
-            elif smoothed_metric < SQUAT_MIN_VAL:
-                cue_text = "TOO DEEP - EASE UP"
-                is_correct = False
-            else:
-                cue_text = "GOOD DEPTH"
-        elif state_text == "invalid_depth":
-            cue_text = "WENT TOO DEEP - STAND UP TO RESET"
-            is_correct = False
-        elif state_text == "invalid_asymmetric":
-            cue_text = "UNEVEN SQUAT - STAND UP TO RESET"
-            is_correct = False
-        elif state_text == "invalid_wide_knees":
-            cue_text = "KNEES TOO WIDE - STAND UP TO RESET"
-            is_correct = False
-        elif state_text == "invalid_back_posture":
-            cue_text = "BACK BENT TOO FAR - STAND UP"
-            is_correct = False
-
-    return smoothed_metric, is_correct, cue_text, state_text, rep_count
 
 
 def main():
+    config_data = load_config()
+    selected_key, exercise_config = select_exercise(config_data)
+    exercise_name = exercise_config["name"]
+    
     pipeline, align, intrinsics = init_camera()
 
-    detector = SquatAngleDetector(depth_intrinsics=intrinsics)
-    rep_counter = SquatRepCounter(stand_threshold=STAND_THRESHOLD, 
-                                  squat_threshold=SQUAT_THRESHOLD,
-                                  angle_min=SQUAT_MIN_VAL,
-                                  max_angle_diff=MAX_ANGLE_DIFF,
-                                  max_knee_dist_mm=MAX_KNEE_DIST_MM,
-                                  max_torso_lean=MAX_TORSO_LEAN)
-    
-    angle_smoother = EMAFilter(alpha=0.3 if not USE_RATIO_MODE else 0.1)
+    detector, rep_counter = get_exercise_components(selected_key, intrinsics, exercise_config)
+    angle_smoother = EMAFilter(alpha=0.3)
 
     frame_queue = queue.Queue(maxsize=2)
     stop_event = threading.Event()
@@ -210,8 +115,11 @@ def main():
     latency_window = []
     WINDOW_SIZE = 30
 
-    print(f"Starting live demo: {EXERCISE_NAME}")
+    print(f"Starting live demo: {exercise_name}")
     print("Press 'q' to quit.")
+
+    last_rep_count = 0
+    tracker = SessionTracker()
 
     try:
         while True:
@@ -224,7 +132,7 @@ def main():
             depth_image = np.asanyarray(depth_frame.get_data())
 
             start_time = time.perf_counter()
-            result = detector.process_frame(color_image, depth_frame, depth_image, side="auto")
+            result = detector.process_frame(color_image, depth_frame, depth_image)
             end_time = time.perf_counter()
 
             latency_ms = (end_time - start_time) * 1000
@@ -236,14 +144,18 @@ def main():
 
             display_image = color_image.copy()
 
-            smoothed_metric, is_correct, cue_text, state_text, rep_count = process_frame_logic(
-                result, rep_counter, angle_smoother, USE_RATIO_MODE
+            smoothed_metric, metric_name, is_correct, cue_text, state_text, rep_count = process_frame_logic(
+                result, rep_counter, angle_smoother, selected_key, exercise_config
             )
             
+            just_completed = (rep_count > last_rep_count)
+            last_rep_count = rep_count
+            tracker.update(state_text, cue_text, just_completed)
+
             if result and "landmarks" in result and smoothed_metric is not None:
                 draw_skeleton_with_feedback(display_image, result["landmarks"], is_correct)
 
-            draw_hud(display_image, EXERCISE_NAME, smoothed_metric, is_correct,
+            draw_hud(display_image, exercise_name, smoothed_metric, metric_name, is_correct,
                      avg_latency, live_fps, cue_text, rep_count, state_text)
 
             cv2.imshow("Smart Mirror - Live Demo", display_image)
@@ -255,8 +167,11 @@ def main():
         stop_event.set()
         cam_thread.join(timeout=1.0)
         pipeline.stop()
-        detector.close()
+        if hasattr(detector, 'close'):
+            detector.close()
         cv2.destroyAllWindows()
+        
+        tracker.print_summary()
 
 if __name__ == "__main__":
     main()
