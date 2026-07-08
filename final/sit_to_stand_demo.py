@@ -32,6 +32,9 @@ import numpy as np
 import pyrealsense2 as rs
 import mediapipe as mp
 import ctypes
+import sys
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'code')))
 
 from sit_to_stand_detector_v2 import SitToStandDetectorV2, SitToStandChecklist
 

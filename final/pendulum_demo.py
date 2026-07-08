@@ -4,6 +4,10 @@ import numpy as np
 import pyrealsense2 as rs
 import mediapipe as mp
 import ctypes
+import sys
+import os
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'code')))
 
 from pendulum_detector import PendulumDetector, PendulumSwingTracker
 
