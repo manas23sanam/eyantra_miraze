@@ -14,7 +14,7 @@ graph TD
     D -->|Live Dashboard| E[User]
 ```
 
-### Technical Optimizations
+## Technical Optimizations
 
 To ensure the system runs at high framerates with minimal latency, we implemented several key optimizations:
 
@@ -59,7 +59,7 @@ Contributions are welcome, especially new exercise detectors! Follow the *Adding
 
 ## Acknowledgements
 
-Developed during the e-Yantra Summer Internship at IIT Bombay (2026). Pose estimation uses [MediaPipe](https://github.com/google-ai-edge/mediapipe) and depth sensing uses the [Intel RealSense SDK](https://github.com/IntelRealSense/librealsense).
+Developed during the e-Yantra Summer Internship at IIT Bombay (2026). Pose estimation uses [MediaPipe](https://github.com/google-ai-edge/mediapipe) and depth sensing uses the [Intel RealSense SDK] (https://github.com/IntelRealSense/librealsense).
 
 ## License
 
