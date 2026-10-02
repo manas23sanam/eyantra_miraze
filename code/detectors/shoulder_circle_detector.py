@@ -1,20 +1,7 @@
 from core.base_exercise import BaseExercise
 import numpy as np
 from typing import Optional, Any, Tuple
-from core.pose_geometry_base import PoseGeometryBase, mp_pose
-
-class EMAFilter:
-
-    def __init__(self, alpha: float):
-        self.alpha = alpha
-        self.value = None
-
-    def update(self, new_val: float) -> Optional[float]:
-        if self.value is None:
-            self.value = new_val
-        else:
-            self.value = self.alpha * new_val + (1 - self.alpha) * self.value
-        return self.value
+from core.pose_geometry_base import PoseGeometryBase, EMAFilter, mp_pose
 
 class ShoulderCircleDetector(PoseGeometryBase):
 

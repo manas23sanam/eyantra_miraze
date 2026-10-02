@@ -1,4 +1,5 @@
 import json
+import os
 from detectors.squat_angle_detector import SquatExercise
 from detectors.pendulum_detector import PendulumExercise
 from detectors.shoulder_circle_detector import ShoulderCircleExercise
@@ -15,7 +16,8 @@ EXERCISE_REGISTRY = {
 }
 
 def load_config():
-    with open('exercises_config.json', 'r') as f:
+    config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'exercises_config.json')
+    with open(config_path, 'r') as f:
         return json.load(f)
 
 def select_exercise(config_data):

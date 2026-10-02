@@ -9,14 +9,14 @@ This report provides a comparative performance analysis of running 2D-to-3D skel
 The tracking pipeline's performance was evaluated under two configurations:
 
 ### A. Baseline Configuration (Empty Placeholder)
-- **Source**: `latency_results_summary.csv`
+- **Source**: `results/latency_results_summary.csv`
 - **Average Latency**: **~0.25 ms**
 - **Peak Latency (p95)**: **~0.35 ms**
 - **Average Frame Rate**: **> 3800 FPS**
 - **Analysis**: This configuration uses a dummy/empty placeholder for the detector where frame data is passed but no actual model inference or depth-map alignment is performed. The sub-millisecond latency represents the absolute floor of Python program overhead and camera frame ingestion without processing.
 
 ### B. Production Configuration (MediaPipe + 3D RealSense Geometry)
-- **Source**: `squat_angle_validation_results.csv`
+- **Source**: `results/squat_angle_validation_results.csv`
 - **Average Latency**: **~55 ms to 70 ms** (mean production latency: **~60 ms**)
 - **Peak Latency (p95)**: **~65 ms to 108 ms**
 - **Average Frame Rate**: **14 to 18 FPS**

@@ -1,3 +1,4 @@
+import sys
 import cv2
 import mediapipe as mp
 import numpy as np
@@ -52,7 +53,7 @@ def analyze_mckenzie(landmarks):
         feedback.append(f'Status: Max Extension! (Extension: {int(extension_angle)}°)')
         color = (255, 255, 0)
     return (feedback, color, elbow_angle, active_side)
-video_source = 'C:\\Users\\BIT\\OneDrive\\Desktop\\software mirror\\dataset\\mckenzie-exersice.mp4'
+video_source = sys.argv[1] if len(sys.argv) > 1 else 0
 cap = cv2.VideoCapture(video_source)
 window_name = 'McKenzie Press-Up Tracker'
 cv2.namedWindow(window_name, cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)

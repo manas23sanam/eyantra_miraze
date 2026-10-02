@@ -1,3 +1,4 @@
+import sys
 import cv2
 import mediapipe as mp
 import numpy as np
@@ -63,7 +64,7 @@ def analyze_single_leg_squat(landmarks, baseline_torso):
             feedback.append(f'Back Form: Rounded! (Compressed to {int(shrinkage_ratio * 100)}%)')
             color = (0, 165, 255)
     return (feedback, color, knee_angle, working_leg, current_torso_length)
-video_source = 'C:\\Users\\BIT\\OneDrive\\Desktop\\software mirror\\dataset\\Single_leg_squat.mp4'
+video_source = sys.argv[1] if len(sys.argv) > 1 else 0
 cap = cv2.VideoCapture(video_source)
 window_name = 'Single Leg Squat Tracker'
 cv2.namedWindow(window_name, cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)

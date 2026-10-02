@@ -5,8 +5,10 @@ import csv
 import numpy as np
 import cv2
 import pyrealsense2 as rs
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from detectors.squat_angle_detector import SquatAngleDetector
-DATASET_FOLDER = 'C:\\Users\\BIT\\OneDrive\\Desktop\\software mirror\\new'
+DATASET_FOLDER = os.environ.get('MIRAZE_DATASET', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'dataset'))
 OUTPUT_CSV = 'squat_angle_validation_results.csv'
 
 def categorize_filename(filename):

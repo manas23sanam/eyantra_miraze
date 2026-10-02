@@ -5,7 +5,7 @@ import numpy as np
 import os
 import glob
 import csv
-DATASET_FOLDER = 'C:\\Users\\BIT\\OneDrive\\Desktop\\software mirror\\new'
+DATASET_FOLDER = os.environ.get('MIRAZE_DATASET', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'dataset'))
 OUTPUT_CSV = 'latency_results_summary.csv'
 
 def run_inference_placeholder(depth_frame):

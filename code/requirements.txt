@@ -1,5 +1,6 @@
-numpy
+flask>=3.0
+numpy>=1.24,<2
+# mp.solutions (legacy Pose API) is used, so keep MediaPipe on the 0.10 line
 mediapipe==0.10.14
-opencv-python
-pyrealsense2
-pandas
+opencv-python>=4.8
+pyrealsense2>=2.54

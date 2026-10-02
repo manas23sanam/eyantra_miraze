@@ -57,7 +57,7 @@ class SquatAngleDetector(PoseGeometryBase):
                 chosen_angle, chosen_side, chosen_ratio = (right_angle, 'right', right_ratio)
         if chosen_angle is None:
             return None
-        torso_lean_deg = self.get_torso_lean_angle(results.pose_landmarks, side=chosen_side)
+        torso_lean_deg = self.get_torso_lean_angle(results.pose_landmarks, side=chosen_side, depth_frame=depth_frame, depth_image=depth_image)
         return {'knee_angle_deg': chosen_angle, 'vertical_ratio': chosen_ratio, 'torso_lean_deg': torso_lean_deg, 'side_used': chosen_side, 'left_angle_deg': left_angle, 'right_angle_deg': right_angle, 'knee_dist_mm': knee_dist_mm, 'angle_diff': angle_diff, 'landmarks': results.pose_landmarks}
 
 class SquatRepCounter:

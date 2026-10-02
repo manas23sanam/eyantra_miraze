@@ -13,13 +13,17 @@ class PoseGeometryBase:
     def close(self):
         self.pose.close()
 
-    def _pixel_depth_to_3d(self, px: float, py: float, depth_frame: Any, depth_image: np.ndarray) -> Optional[np.ndarray]:
+    def _pixel_depth_to_3d(self, px: float, py: float, depth_frame: Any, depth_image: np.ndarray, window: int=2) -> Optional[np.ndarray]:
         h, w = depth_image.shape
         x = int(np.clip(px * w, 0, w - 1))
         y = int(np.clip(py * h, 0, h - 1))
-        depth_mm = depth_frame.get_distance(x, y) * 1000.0
-        if depth_mm <= 0:
+        # Median of the valid depths in a small window: a single pixel is noisy
+        # and a zero-depth hole would otherwise drop the joint.
+        patch = depth_image[max(y - window, 0):y + window + 1, max(x - window, 0):x + window + 1]
+        valid = patch[patch > 0]
+        if valid.size == 0:
             return None
+        depth_mm = float(np.median(valid)) * depth_frame.get_units() * 1000.0
         fx, fy = (self.intrinsics.fx, self.intrinsics.fy)
         cx, cy = (self.intrinsics.ppx, self.intrinsics.ppy)
         X = (x - cx) * depth_mm / fx
@@ -51,7 +55,7 @@ class PoseGeometryBase:
         rgb_image = color_image[:, :, ::-1]
         return self.pose.process(rgb_image)
 
-    def get_torso_lean_angle(self, landmarks_proto: Any, side: str='left') -> Optional[float]:
+    def get_torso_lean_angle(self, landmarks_proto: Any, side: str='left', depth_frame: Any=None, depth_image: Optional[np.ndarray]=None) -> Optional[float]:
         if landmarks_proto is None:
             return None
         landmarks = landmarks_proto.landmark
@@ -63,10 +67,18 @@ class PoseGeometryBase:
             shoulder = landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value]
         if hip.visibility < 0.2 or shoulder.visibility < 0.2:
             return None
-        hip_pt = np.array([hip.x, hip.y, hip.z])
-        shoulder_pt = np.array([shoulder.x, shoulder.y, shoulder.z])
-        vertical_up = np.array([hip.x, hip.y - 0.5, hip.z])
-        return self.angle_between(shoulder_pt, hip_pt, vertical_up)
+        # Camera Y points down, so "up" is -Y in both pixel and camera space.
+        if depth_frame is not None and depth_image is not None and self.intrinsics is not None:
+            hip_3d = self._pixel_depth_to_3d(hip.x, hip.y, depth_frame, depth_image)
+            shoulder_3d = self._pixel_depth_to_3d(shoulder.x, shoulder.y, depth_frame, depth_image)
+            if hip_3d is not None and shoulder_3d is not None:
+                return self.angle_between(shoulder_3d, hip_3d, hip_3d + np.array([0.0, -1.0, 0.0]))
+        # Fallback without depth: MediaPipe x/y are normalised separately by
+        # width and height, so scale back to pixels before measuring an angle.
+        h, w = depth_image.shape if depth_image is not None else (480, 640)
+        hip_pt = np.array([hip.x * w, hip.y * h])
+        shoulder_pt = np.array([shoulder.x * w, shoulder.y * h])
+        return self.angle_between(shoulder_pt, hip_pt, hip_pt + np.array([0.0, -1.0]))
 
 class EMAFilter:
 

@@ -1,3 +1,4 @@
+import os
 import time
 import cv2
 import numpy as np
@@ -50,6 +51,7 @@ def camera_tracking_loop():
     exercise = create_exercise(SELECTED_KEY, intrinsics, EXERCISE_CONFIG)
     
     latency_window = []
+    frame_times = []
     print(f'RealSense camera tracking started for {EXERCISE_NAME}.')
     try:
         while True:
@@ -72,7 +74,12 @@ def camera_tracking_loop():
                 latency_window.pop(0)
             avg_lat = sum(latency_window) / len(latency_window)
             latency_ms = avg_lat
-            live_fps = 1000 / avg_lat if avg_lat > 0 else 0
+            # FPS is measured end-to-end (camera wait included), not from processing time.
+            frame_times.append(end_time)
+            if len(frame_times) > 31:
+                frame_times.pop(0)
+            span = frame_times[-1] - frame_times[0]
+            live_fps = (len(frame_times) - 1) / span if span > 0 else 0.0
             display_image = color_image.copy()
             
             current_metric = result['metric_value']
@@ -140,4 +147,5 @@ if __name__ == '__main__':
     tracker_thread = threading.Thread(target=camera_tracking_loop)
     tracker_thread.daemon = True
     tracker_thread.start()
-    app.run(host='0.0.0.0', port=5000, threaded=True)
+    # Localhost only by default; set MIRROR_HOST=0.0.0.0 to view the feed from another device.
+    app.run(host=os.environ.get('MIRROR_HOST', '127.0.0.1'), port=int(os.environ.get('MIRROR_PORT', '5000')), threaded=True)

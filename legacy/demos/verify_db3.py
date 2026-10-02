@@ -154,7 +154,7 @@ def main():
     parser.add_argument('--show_ui', action='store_true', help='Display visual playback UI')
     parser.add_argument('--save_csv', action='store_true', help='Save summary results to CSV')
     args = parser.parse_args()
-    db3_dir = 'C:\\Users\\BIT\\OneDrive\\Desktop\\software mirror\\new'
+    db3_dir = os.environ.get('MIRAZE_DATASET', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'dataset'))
     db3_files = sorted(glob.glob(os.path.join(db3_dir, '*.db3')))
     if not db3_files:
         print(f'No .db3 files found in {db3_dir}')

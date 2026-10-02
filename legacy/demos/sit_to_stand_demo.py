@@ -9,7 +9,7 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'code')))
 from sit_to_stand_detector_v2 import SitToStandDetectorV2, SitToStandChecklist
 EXERCISE_NAME = 'SIT TO STAND'
-DATASET_FOLDER = 'C:\\Users\\BIT\\OneDrive\\Desktop\\software mirror\\dataset'
+DATASET_FOLDER = os.environ.get('MIRAZE_DATASET', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'dataset'))
 TEACH_CLIP_FILE = 'sit to stand_side_manas_1.db3'
 TEACH_CLIP_DURATION_SEC = 12
 LEG_STAND_THRESHOLD = 160.0
