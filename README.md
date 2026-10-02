@@ -52,3 +52,15 @@ To add a new exercise:
 1. Create a new detector file inside `code/detectors/`.
 2. Make your new class inherit from `BaseExercise`.
 3. Add your new exercise to `EXERCISE_REGISTRY` in `code/core/exercise_utils.py` and update the `exercises_config.json`.
+
+## Contributing
+
+Contributions are welcome, especially new exercise detectors! Follow the *Adding a New Exercise* steps above, test your detector on a recorded RealSense session, and open a pull request describing the exercise and how you validated it.
+
+## Acknowledgements
+
+Developed during the e-Yantra Summer Internship at IIT Bombay (2026). Pose estimation uses [MediaPipe](https://github.com/google-ai-edge/mediapipe) and depth sensing uses the [Intel RealSense SDK](https://github.com/IntelRealSense/librealsense).
+
+## License
+
+Released under the [MIT License](LICENSE).
